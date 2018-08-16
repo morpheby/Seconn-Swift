@@ -50,9 +50,15 @@ public class SecoNetwork {
         var lastLayer: Layer = InputLayer(inputSize: config.inputSize)
         layers.append(lastLayer)
 
-        for layerSize in config.hiddenLayersSizes {
+        for layerSize in config.hiddenLayersSizes.dropLast() {
             lastLayer = HiddenLayer(inputSize: lastLayer.outputSize,
                                     outputSize: layerSize, weightInitializer: config.weightInitializer)
+            layers.append(lastLayer)
+        }
+
+        if let layerSize = config.hiddenLayersSizes.last {
+            lastLayer = HiddenLayer(inputSize: lastLayer.outputSize,
+                                     outputSize: layerSize, weightInitializer: config.weightInitializer)
             layers.append(lastLayer)
         }
 
@@ -86,7 +92,7 @@ public class SecoNetwork {
                 var layerTmp = layers[layerIdx] as! Layer & LearningLayer
                 let newOutput = layerTmp.learn(input: layerInput, output: layerOutput, target: lastOutput,
                                                weightRate: (inverse ? -1.0 : 1.0) * config.learningRateForWeights * rateReduction,
-                                            biasRate: config.learningRateForBiases * rateReduction)
+                                            biasRate: (inverse ? -1.0 : 1.0) * config.learningRateForBiases * rateReduction)
                 layers[layerIdx] = layerTmp
                 return newOutput
         }
@@ -100,14 +106,64 @@ extension SecoNetwork: CustomDebugStringConvertible {
             case let l as InputLayer:
                 return "InputLayer: {inputSize: \(l.inputSize)}"
             case let l as HiddenLayer:
-                let fullWeights = Array(l.weights.joined())
-                return "HiddenLayer: {inputSize: \(l.inputSize), outputSize: \(l.outputSize), minWeight: \(min(fullWeights)), maxWeight: \(max(fullWeights)), minBias: \(min(l.biases)), maxBias: \(max(l.biases)), oneRow: \(l.weights[row: 0][0..<min(l.weights.columns, 100)])}"
+                return "HiddenLayer: {inputSize: \(l.inputSize), outputSize: \(l.outputSize), minWeight: \(min(l.weights)), maxWeight: \(max(l.weights)), minBias: \(min(l.biases)), maxBias: \(max(l.biases)), data: \n\(l.weights)\n}"
             case let l as OutputLayer:
-                let fullWeights = Array(l.reductionMatrix.joined())
-                return "OutputLayer: {inputSize: \(l.inputSize), outputSize: \(l.outputSize), minWeight: \(min(fullWeights)), maxWeight: \(max(fullWeights)), oneRow: \(l.reductionMatrix[row: 0])}"
+                return "OutputLayer: {inputSize: \(l.inputSize), outputSize: \(l.outputSize), minWeight: \(min(l.reductionMatrix)), maxWeight: \(max(l.reductionMatrix)), data: \n\(l.reductionMatrix)\n}"
             default:
                 return ""
             }
         } .joined(separator: "\n")
+    }
+}
+
+extension SecoNetwork: CustomReflectable {
+    public var customMirror: Mirror {
+        let children: [Mirror.Child] = [
+            (label: "config", value: self.config),
+            (label: "layers", value: self.layers),
+        ]
+
+        return Mirror(self, children: children, displayStyle: .`struct`)
+    }
+}
+
+extension InputLayer: CustomReflectable {
+    public var customMirror: Mirror {
+        let children: [Mirror.Child] = [
+            (label: "inputSize", value: self.inputSize),
+        ]
+
+        return Mirror(self, children: children, displayStyle: .`struct`)
+    }
+}
+
+extension OutputLayer: CustomReflectable {
+    public var customMirror: Mirror {
+        let children: [Mirror.Child] = [
+            (label: "inputSize", value: self.inputSize),
+            (label: "outputSize", value: self.outputSize),
+            (label: "minWeight", value: min(self.reductionMatrix)),
+            (label: "maxWeight", value: max(self.reductionMatrix)),
+            (label: "data", value: self.reductionMatrix),
+        ]
+
+        return Mirror(self, children: children, displayStyle: .`struct`)
+    }
+}
+
+extension HiddenLayer: CustomReflectable {
+    public var customMirror: Mirror {
+        let children: [Mirror.Child] = [
+            (label: "inputSize", value: self.inputSize),
+            (label: "outputSize", value: self.outputSize),
+            (label: "minWeight", value: min(self.weights)),
+            (label: "maxWeight", value: max(self.weights)),
+            (label: "minBias", value: min(self.biases)),
+            (label: "maxBias", value: max(self.biases)),
+            (label: "weights", value: self.weights),
+            (label: "biases", value: self.biases),
+        ]
+
+        return Mirror(self, children: children, displayStyle: .`struct`)
     }
 }

@@ -96,13 +96,14 @@ extension HiddenLayer: LearningLayer {
         //        y1 == 1 -> biasCorr[y1] *= -1
 
         var weightCorrections = mul(weightRate, weightCorrectionsInit)
-        weightCorrections = elmul(weightCorrections, Matrix(repeatElement(output * -2.0 + 1.0, count: weightCorrections.columns))′)
+        weightCorrections = elmul(weightCorrections, Matrix(repeatElement(output * -1.5 + 0.5, count: weightCorrections.columns))′)
         let targetNotEqualsOutput = abs(target - output)
         let inputIsOne = input
 
         weightCorrections = elmul(weightCorrections,
-                                  Matrix(column: neg(targetNotEqualsOutput) + 1.0) * Matrix(row: neg(inputIsOne) + 1.0) +
-                                  Matrix(column: targetNotEqualsOutput) * Matrix(row: inputIsOne))
+                                  matrixOp({x in clip(x, low: 0.0, high: 1.0)},
+                                    Matrix(column: neg(targetNotEqualsOutput) + 1.0) * Matrix(row: neg(inputIsOne) + 1.0) +
+                                    Matrix(column: targetNotEqualsOutput) * Matrix(row: inputIsOne)))
 
         var biasCorrections = Array(repeating: biasRate, count: biases.count)
         biasCorrections = biasCorrections * (output * -2.0 + 1.0)
@@ -110,7 +111,8 @@ extension HiddenLayer: LearningLayer {
 
         let targetInput: [FloatType] =
             activationFunction(
-                sum(weights′ * Matrix(column: targetNotEqualsOutput * 2.0 - 1.0), axies: .row)[column: 0]
+//                sum(weights′ * Matrix(column: targetNotEqualsOutput /* * 2.0 - 1.0 */), axies: .row)[column: 0]
+                sum(weights′ * Matrix(column: output), axies: .row)
         )
 
         weights = weights + weightCorrections

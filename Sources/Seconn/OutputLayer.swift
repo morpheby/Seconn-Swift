@@ -10,31 +10,32 @@ import Surge
 
 struct OutputLayer {
     let reductionMatrix: Matrix<FloatType>
+    let reductionMatrixTransposed: Matrix<FloatType>
 
     init(inputSize: Int, outputSize: Int) {
         precondition(inputSize % outputSize == 0, "Output layer should be a multiple of its input")
         let count = inputSize / outputSize
         let rate = FloatType(outputSize) / FloatType(inputSize)
-        let matrix = (0 ..< outputSize) .map { (i: Int) -> [FloatType] in
+        var matrix = Matrix(rows: outputSize, columns: inputSize, repeatedValue: FloatType(0.0))
+        var rowArray = Array(repeating: FloatType(0.0), count: inputSize)
+        for i in 0..<outputSize {
             let prefixCount = count * i
             let postfixCount = count * (outputSize - i - 1)
 
-            var array: [FloatType] = Array()
-            array.reserveCapacity(inputSize)
-
             if prefixCount != 0 {
-                array.append(contentsOf: Array(repeating: 0.0, count: prefixCount))
+                rowArray.replaceSubrange(..<prefixCount, with: repeatElement(0.0, count: prefixCount))
             }
 
-            array.append(contentsOf: Array(repeating: rate, count: count))
+            rowArray.replaceSubrange(prefixCount..<(prefixCount+count), with: repeatElement(rate, count: count))
 
             if postfixCount != 0 {
-                array.append(contentsOf: Array(repeating: 0.0, count: postfixCount))
+                rowArray.replaceSubrange((prefixCount+count)..., with: repeatElement(0.0, count: postfixCount))
             }
 
-            return array
+            matrix.replace(row: i, with: rowArray)
         }
-        reductionMatrix = Matrix(matrix)
+        reductionMatrix = matrix
+        reductionMatrixTransposed = reductionMatrix′
     }
 }
 
@@ -48,14 +49,13 @@ extension OutputLayer: Layer {
     }
 
     func process(input: [FloatType]) -> [FloatType] {
-        return (reductionMatrix * Matrix([input])′)[column: 0]
+        return Array((reductionMatrix * Matrix(column: input))[column: 0])
     }
 }
 
 
 extension OutputLayer: LearningLayer {
     mutating func learn(input: [FloatType], output: [FloatType], target: [FloatType], weightRate: FloatType, biasRate: FloatType) -> [FloatType] {
-
-        return ceil((reductionMatrix′ * Matrix([target])′)[column: 0])
+        return ceil(clip((reductionMatrixTransposed * Matrix(column: target))[column: 0], low: 0.0, high: 1.0))
     }
 }

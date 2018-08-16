@@ -1,15 +1,17 @@
 //
-//  HiddenLayer2.swift
+//  HiddenLayer3.swift
 //  Seconn
 //
-//  Created by Ilya Mikhaltsou on 13.04.2018.
+//  Created by Ilya Mikhaltsou on 12.07.2018.
 //
 
 import Foundation
 import Surge
 
-/// Alternative consideration over how ECO applies to Binary step (doesn't seem to work)
-struct HiddenLayer2 {
+/// Initial view of how ECO should apply to Binary step. Note that high bias learning rate is a
+/// prerequisite, since it controls the activation threshold. Without appropriate bias learnint
+/// rate, the output becomes saturated.
+struct HiddenLayer3 {
     var weights: Matrix<FloatType>
     var biases: [FloatType]
     let activationFunction: ([FloatType]) -> [FloatType] = { input in
@@ -28,7 +30,7 @@ struct HiddenLayer2 {
     private let weightCorrectionsInit: Matrix<FloatType>
 }
 
-extension HiddenLayer2: Layer {
+extension HiddenLayer3: Layer {
     var inputSize: Int {
         return weights.columns
     }
@@ -42,7 +44,7 @@ extension HiddenLayer2: Layer {
     }
 }
 
-extension HiddenLayer2: LearningLayer {
+extension HiddenLayer3: LearningLayer {
     mutating func learn(input: [FloatType], output: [FloatType], target: [FloatType], weightRate: FloatType, biasRate: FloatType) -> [FloatType] {
         //        y1 = act(sum(x1..xN * weights) + biases)
         //
@@ -51,24 +53,24 @@ extension HiddenLayer2: LearningLayer {
         //            biases[y1] += biasRate
         //            if x1 == 0
         //              weights[x1][y1] += weightRate
-        //              x1Corr = 1
+        //              x1Corr = 0
         //            else x1 == 1
-        //              weights[x1][y1] += weightRate
-        //              x1Corr = 1
+        //              weights[x1][y1] += weightRate (nop)
+        //              x1Corr = 0
         //          else y1 == 1
         //            biases[y1] -= biasRate
         //            if x1 == 0
-        //              weights[x1][y1] += weightRate
+        //              weights[x1][y1] -= weightRate (nop)
         //              x1Corr = 1
         //            else x1 == 1
         //              weights[x1][y1] -= weightRate
-        //              x1Corr = 0
+        //              x1Corr = 1
         //        else y0_1 == 1
         //          if y1 == 0
         //            biases[y1] += biasRate
         //            if x1 == 0
-        //              weights[x1][y1] -= weightRate
-        //              x1Corr = 0
+        //              weights[x1][y1] += weightRate (nop)
+        //              x1Corr = 1
         //            else x1 == 1
         //              weights[x1][y1] += weightRate
         //              x1Corr = 1
@@ -78,31 +80,29 @@ extension HiddenLayer2: LearningLayer {
         //              weights[x1][y1] -= weightRate
         //              x1Corr = 0
         //            else x1 == 1
-        //              weights[x1][y1] -= weightRate
+        //              weights[x1][y1] -= weightRate (nop)
         //              x1Corr = 0
         //
         //        weightCorr = [weightRate]
-        //        y0_1 == 1 ->
-        //          weightCorr[.][y1] *= -1
-        //        y0_1 != y1 ->
-        //          x1 == 1 -> weightCorr[x1][y1] *= -1
-        //        sum(weigthCorr[x1][.]) > 0 ->
-        //          x1Corr = 1
-        //        else
+        //        y1 == 1 -> weightCorr[.][y1] *= -1
+        //        y0_1 == y1 ->
+        //          x1 == 1 -> weightCorr[x1][y1] = 0
         //          x1Corr = 0
+        //        y0_1 != y1 ->
+        //          x1 == 0 -> weightCorr[x1][y1] = 0
+        //          x1Corr = 1
         //
         //        biasCorr = [biasRate]
         //        y1 == 1 -> biasCorr[y1] *= -1
 
         var weightCorrections = mul(weightRate, weightCorrectionsInit)
-        let targetEqualsOne = target
+        weightCorrections = elmul(weightCorrections, Matrix(repeatElement(output * -2.0 + 1.0, count: weightCorrections.columns))′)
         let targetNotEqualsOutput = abs(target - output)
         let inputIsOne = input
 
-        weightCorrections = elmul(weightCorrections, Matrix(repeatElement(targetEqualsOne * -2.0 + 1.0, count: weightCorrections.columns))′)
-
         weightCorrections = elmul(weightCorrections,
-                                  mul(-2.0, Matrix(column: targetNotEqualsOutput) * Matrix(row: inputIsOne)) + 1.0)
+                                  Matrix(column: neg(targetNotEqualsOutput) + 1.0) * Matrix(row: neg(inputIsOne) + 1.0) +
+                                    Matrix(column: targetNotEqualsOutput) * Matrix(row: inputIsOne))
 
         var biasCorrections = Array(repeating: biasRate, count: biases.count)
         biasCorrections = biasCorrections * (output * -2.0 + 1.0)
@@ -110,7 +110,7 @@ extension HiddenLayer2: LearningLayer {
 
         let targetInput: [FloatType] =
             activationFunction(
-                sum(weights, axies: .column)
+                sum(weights′ * Matrix(column: targetNotEqualsOutput * 2.0 - 1.0), axies: .row)
         )
 
         weights = weights + weightCorrections

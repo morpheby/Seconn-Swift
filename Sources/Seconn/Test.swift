@@ -19,7 +19,7 @@ public func argmax<T: Collection>(_ collection: T) -> T.Index where T.Element: C
 }
 
 public class SeconnTest {
-    public let dataset: MnistDataset
+    public let dataset: MnistDatasetProtocol
     public let detrainDataset: NoiseDataset
 
     public let config: SecoNetworkConfiguration
@@ -49,17 +49,35 @@ public class SeconnTest {
         return mean(zip(output, target) .map { a, b in a == b ? 1.0 : 0.0 })
     }
 
-    public func test(batches: CountableRange<Int>) -> FloatType {
+    public func test(batches: CountableRange<Int>) -> TestResults {
         var totalPerf: FloatType = 0.0
+        let totalLabels = dataset.testBatch(index: 0).1[0].count
+        var indexedPerf: [FloatType] = Array(repeating: 0.0, count: totalLabels)
 
         for batchIdx in batches {
             let (testSet, testLabels) = dataset.testBatch(index: batchIdx)
 
             let outputs = batchCompute(inputBatch: testSet)
             let perf = performance(output: outputs.map(argmax), target: testLabels.map(argmax))
+            let indexed = (0..<totalLabels).map { (targetLabel: Int) -> FloatType in
+                let batch = zip(outputs.map(argmax), testLabels.map(argmax)).filter { values in
+                    values.1 == targetLabel
+                }
+                let (output, target): ([Int], [Int]) = batch.reduce(into: ([], [])) { (result, e) in
+                    result.0.append(e.0)
+                    result.1.append(e.1)
+                }
+                return performance(output: output, target: target)
+            }
+            indexedPerf = indexedPerf .+ indexed
             totalPerf += perf
         }
-        return totalPerf / FloatType(batches.count)
+        return TestResults(totalPerformance: totalPerf / FloatType(batches.count), indexedPerformance: indexedPerf / FloatType(batches.count))
+    }
+
+    public struct TestResults {
+        public var totalPerformance: FloatType
+        public var indexedPerformance: [FloatType]
     }
 
     fileprivate class TrainVars {
@@ -96,6 +114,10 @@ public class SeconnTest {
             public let sample: Int
             public let current: Int
 
+            public var value: (input: [FloatType], output: [FloatType]) {
+                return (input: vars.batchSet[sample], output: vars.batchLabels[sample])
+            }
+
             private let vars: TrainVars
 
             fileprivate init(epoch: Int, batch: Int, sample: Int, current: Int, vars: TrainVars) {
@@ -107,7 +129,11 @@ public class SeconnTest {
             }
 
             public func train(rate: FloatType) {
-                vars.parent.neuralNetwork.train(input: vars.batchSet[sample], output: vars.batchLabels[sample], rateReduction: rate)
+                vars.parent.neuralNetwork.train(input: value.input, output: value.output, rateReduction: rate)
+            }
+
+            public func process() -> [FloatType] {
+                return vars.parent.neuralNetwork.process(input: value.input)
             }
         }
 
@@ -190,17 +216,23 @@ public class SeconnTest {
                 self.limitedCount = limitedCount
             }
         }
+        
 
         public struct TrainState: LimitedTrainStateProtocol {
             public var epoch: Int { return trainState.epoch }
             public var batch: Int { return trainState.batch }
             public var sample: Int { return trainState.sample }
             public var current: Int { return trainState.current }
+            public var value: (input: [FloatType], output: [FloatType]) { return trainState.value }
 
             public let limitedCount: Int
 
             public func train(rate: FloatType) {
                 trainState.train(rate: rate)
+            }
+
+            public func process() -> [FloatType] {
+                return trainState.process()
             }
 
             private let trainState: TrainStateProtocol
@@ -219,11 +251,48 @@ public class SeconnTest {
         }
     }
 
+    public struct FilteredTrainSequence<T: TrainSequenceProtocol>: TrainSequenceProtocol {
+
+        public struct Iterator: TrainIteratorProtocol {
+            public var epochIdx: Int { return internalTrain.epochIdx }
+            public var batchIdx: Int { return internalTrain.batchIdx }
+            public var sampleIdx: Int { return internalTrain.sampleIdx }
+            public var batchCount: Int { return internalTrain.batchCount }
+            public var samplesInBatchCount: Int { return internalTrain.samplesInBatchCount }
+
+            public typealias Element = T.Element
+
+            fileprivate var internalTrain: T.Iterator
+            let filterPredicate: (Element) -> Bool
+
+            public mutating func next() -> Element? {
+                var value: Element? = nil
+                repeat {
+                    value = internalTrain.next()
+                } while value != nil && !filterPredicate(value!)
+                return value
+            }
+
+            fileprivate init(internalTrain: T.Iterator, filterPredicate: @escaping (Element) -> Bool) {
+                self.internalTrain = internalTrain
+                self.filterPredicate = filterPredicate
+            }
+        }
+
+        let filterPredicate: (Element) -> Bool
+        var internalTrain: T
+
+        public func makeIterator() -> Iterator {
+            return Iterator(internalTrain: self.internalTrain.makeIterator(), filterPredicate: filterPredicate)
+        }
+    }
+
     public func train() -> TrainSequence {
         return TrainSequence(parent: self)
     }
 
     public init() throws {
+//        dataset = MnistDatasetStratified(internalDataset: try loadMnistDataset())
         dataset = try loadMnistDataset()
 
         detrainDataset = NoiseDataset(
@@ -237,11 +306,13 @@ public class SeconnTest {
         config = SecoNetworkConfiguration(
             inputSize: 784,
             outputSize: 10,
-//            hiddenLayersSizes: [100, 50],
-            hiddenLayersSizes: [1000],
+//            hiddenLayersSizes: [5000, 500],
+            hiddenLayersSizes: [500],
+//            hiddenLayersSizes: [500, 500],
+//            hiddenLayersSizes: [500, 500, 500, 500],
 //            hiddenLayersSizes: [1000, 1000],
             weightInitializer: { () -> FloatType in
-                Float(arc4random_uniform(UInt32.max)) / Float(UInt32.max) - 0.5
+                (Float(arc4random_uniform(UInt32.max)) / Float(UInt32.max) - 0.5) * 1.0
             },
             learningRateForWeights: 0.001,
 //            learningRateForBiases: 0.0
@@ -257,8 +328,10 @@ public protocol TrainStateProtocol {
     var batch: Int { get }
     var sample: Int { get }
     var current: Int { get }
+    var value: (input: [FloatType], output: [FloatType]) { get }
 
     func train(rate: FloatType)
+    func process() -> [FloatType]
 }
 
 public protocol TrainSequenceProtocol: Sequence where Iterator: TrainIteratorProtocol {
@@ -307,6 +380,12 @@ extension LimitedTrainStateProtocol {
 extension TrainSequenceProtocol {
     public func prefix(_ maxLength: Int) -> SeconnTest.CountLimitedTrainSequence<Self> {
         return SeconnTest.CountLimitedTrainSequence(limitedCount: maxLength, internalTrain: self)
+    }
+}
+
+extension TrainSequenceProtocol {
+    public func filtered(_ isIncluded: @escaping (Self.Element) -> Bool) -> SeconnTest.FilteredTrainSequence<Self> {
+        return SeconnTest.FilteredTrainSequence(filterPredicate: isIncluded, internalTrain: self)
     }
 }
 

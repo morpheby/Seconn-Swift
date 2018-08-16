@@ -16,7 +16,7 @@ public class NoiseDataset {
         func f() -> FloatType {
             switch self {
             case let .linear(min: min, max: max):
-                return min + (max - min) * (FloatType(arc4random_uniform(UInt32.max)) / FloatType(UInt32.max) - 0.5)
+                return min + (max - min) * (FloatType(arc4random_uniform(UInt32.max)) / FloatType(UInt32.max))
             case .gaussian:
                 fatalError("Not implemented")
             }

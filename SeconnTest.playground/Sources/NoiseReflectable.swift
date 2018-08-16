@@ -6,7 +6,7 @@ extension NoiseDataset: CustomReflectable {
     public var customMirror: Mirror {
         return Mirror(self, children: [
             (label: "batchCount", value: self.batchCount),
-        ])
+        ], displayStyle: .`struct`)
     }
 }
 
