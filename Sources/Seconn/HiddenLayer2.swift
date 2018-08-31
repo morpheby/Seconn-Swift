@@ -10,7 +10,7 @@ import Surge
 
 /// Alternative consideration over how ECO applies to Binary step (doesn't seem to work)
 struct HiddenLayer2 {
-    var weights: Matrix<FloatType>
+    var weights: SliceableMatrix<FloatType>
     var biases: [FloatType]
     let activationFunction: ([FloatType]) -> [FloatType] = { input in
         return ceil(clip(input, low: 0.0, high: 1.0))
@@ -20,25 +20,25 @@ struct HiddenLayer2 {
         let allWeights = (0 ..< inputSize*outputSize) .map { _ in
             weightInitializer()
         }
-        self.weights = Matrix(rows: outputSize, columns: inputSize, grid: allWeights)
+        self.weights = SliceableMatrix(rows: outputSize, columns: inputSize, grid: allWeights)
         self.biases = Array(repeating: 0.0, count: outputSize)
-        self.weightCorrectionsInit = Matrix(rows: weights.rows, columns: weights.columns, repeatedValue: 1.0)
+        self.weightCorrectionsInit = SliceableMatrix(rows: weights.rowCount, columns: weights.columnCount, repeatedValue: 1.0)
     }
 
-    private let weightCorrectionsInit: Matrix<FloatType>
+    private let weightCorrectionsInit: SliceableMatrix<FloatType>
 }
 
 extension HiddenLayer2: Layer {
     var inputSize: Int {
-        return weights.columns
+        return weights.columnCount
     }
 
     var outputSize: Int {
-        return weights.rows
+        return weights.rowCount
     }
 
     func process(input: [FloatType]) -> [FloatType] {
-        return activationFunction(mul(weights, Matrix(column: input))[column: 0] .+ biases)
+        return activationFunction(mul(weights, SliceableMatrix(column: input))[column: 0] .+ biases)
     }
 }
 
@@ -96,17 +96,17 @@ extension HiddenLayer2: LearningLayer {
 
         var weightCorrections = mul(weightRate, weightCorrectionsInit)
         let targetEqualsOne = target
-        let targetNotEqualsOutput = abs(target - output)
+        let targetNotEqualsOutput = abs(target .- output)
         let inputIsOne = input
 
-        weightCorrections = elmul(weightCorrections, Matrix(repeatElement(targetEqualsOne * -2.0 + 1.0, count: weightCorrections.columns))′)
+        weightCorrections = elmul(weightCorrections, SliceableMatrix(repeatElement(targetEqualsOne * -2.0 + 1.0, count: weightCorrections.columnCount))′)
 
         weightCorrections = elmul(weightCorrections,
-                                  mul(-2.0, Matrix(column: targetNotEqualsOutput) * Matrix(row: inputIsOne)) + 1.0)
+                                  mul(-2.0, SliceableMatrix(column: targetNotEqualsOutput) * SliceableMatrix(row: inputIsOne)) + 1.0)
 
         var biasCorrections = Array(repeating: biasRate, count: biases.count)
-        biasCorrections = biasCorrections * (output * -2.0 + 1.0)
-        biasCorrections = biasCorrections * targetNotEqualsOutput
+        biasCorrections = biasCorrections .* (output * -2.0 + 1.0)
+        biasCorrections = biasCorrections .* targetNotEqualsOutput
 
         let targetInput: [FloatType] =
             activationFunction(

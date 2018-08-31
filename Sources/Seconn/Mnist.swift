@@ -113,7 +113,13 @@ public struct MnistDatasetStratified: MnistDatasetProtocol {
 }
 
 public func loadMnistDataset() throws -> MnistDataset {
-    let mnistDir = FileManager.default.temporaryDirectory.appendingPathComponent("MNIST")
+
+    let mnistDir: URL
+    if #available(OSX 10.12, *) {
+        mnistDir = FileManager.default.temporaryDirectory.appendingPathComponent("MNIST")
+    } else {
+        mnistDir = try! FileManager.default.url(for: .cachesDirectory, in: .allDomainsMask, appropriateFor: nil, create: false).appendingPathComponent("Seconn").appendingPathComponent("MNIST")
+    }
     try? FileManager.default.createDirectory(at: mnistDir, withIntermediateDirectories: false, attributes: nil)
     
     let m: MNISTManager = try MNISTManager(

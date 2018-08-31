@@ -9,14 +9,14 @@ import Foundation
 import Surge
 
 struct OutputLayer {
-    let reductionMatrix: Matrix<FloatType>
-    let reductionMatrixTransposed: Matrix<FloatType>
+    let reductionMatrix: SliceableMatrix<FloatType>
+    let reductionMatrixTransposed: SliceableMatrix<FloatType>
 
     init(inputSize: Int, outputSize: Int) {
         precondition(inputSize % outputSize == 0, "Output layer should be a multiple of its input")
         let count = inputSize / outputSize
         let rate = FloatType(outputSize) / FloatType(inputSize)
-        var matrix = Matrix(rows: outputSize, columns: inputSize, repeatedValue: FloatType(0.0))
+        var matrix = SliceableMatrix(rows: outputSize, columns: inputSize, repeatedValue: FloatType(0.0))
         var rowArray = Array(repeating: FloatType(0.0), count: inputSize)
         for i in 0..<outputSize {
             let prefixCount = count * i
@@ -41,21 +41,21 @@ struct OutputLayer {
 
 extension OutputLayer: Layer {
     var inputSize: Int {
-        return reductionMatrix.columns
+        return reductionMatrix.columnCount
     }
 
     var outputSize: Int {
-        return reductionMatrix.rows
+        return reductionMatrix.rowCount
     }
 
     func process(input: [FloatType]) -> [FloatType] {
-        return Array((reductionMatrix * Matrix(column: input))[column: 0])
+        return Array((reductionMatrix * SliceableMatrix(column: input))[column: 0])
     }
 }
 
 
 extension OutputLayer: LearningLayer {
     mutating func learn(input: [FloatType], output: [FloatType], target: [FloatType], weightRate: FloatType, biasRate: FloatType) -> [FloatType] {
-        return ceil(clip((reductionMatrixTransposed * Matrix(column: target))[column: 0], low: 0.0, high: 1.0))
+        return ceil(clip((reductionMatrixTransposed * SliceableMatrix(column: target))[column: 0], low: 0.0, high: 1.0))
     }
 }
